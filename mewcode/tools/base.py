@@ -12,13 +12,13 @@ MAX_OUTPUT_CHARS = 10000
 
 ToolCategory = Literal["read", "write", "command"]
 
-
+# 用dataclass而不用BaseModel，因为ToolResult只是一个简单的数据容器，不需要验证和序列化功能
 @dataclass
 class ToolResult:
     output: str
-    is_error: bool = False
+    is_error: bool = False # 告诉模型这次没成功，模型会重新进行下一次判断
 
-
+# ABC抽象基类，所有工具继承它，基类带默认值，子类只覆盖要改的
 class Tool(ABC):
     name: str
     description: str
@@ -34,16 +34,16 @@ class Tool(ABC):
 
 
     def get_schema(self) -> dict[str, Any]:
-        schema = self.params_model.model_json_schema()
-        schema.pop("title", None)
+        schema = self.params_model.model_json_schema() # 获取参数模型的 JSON Schema
+        schema.pop("title", None) # 移除 JSON Schema 中的 title 字段
         return {
             "name": self.name,
             "description": self.description,
             "input_schema": schema,
         }
 
-    @abstractmethod
-    async def execute(self, params: BaseModel) -> ToolResult: ...
+    @abstractmethod # 子类必须实现该方法，执行工具的具体逻辑
+    async def execute(self, params: BaseModel) -> ToolResult: ... # 返回工具执行结果
 
 
 # --- 流式事件 ---

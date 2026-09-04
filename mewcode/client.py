@@ -14,6 +14,7 @@ from mewcode.serialization import (
     build_chat_completion_messages,
     build_openai_input,
 )
+# 事件族
 from mewcode.tools.base import (
     StreamEnd,
     StreamEvent,
@@ -107,13 +108,14 @@ class LLMClient(ABC):
         system: str = "",
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        yield TextDelta("")
+        yield TextDelta("") # 让python类型检查器认出这是一个async generator
 
     def set_max_output_tokens(self, tokens: int) -> None:
         pass
 
 
 def _supports_adaptive_thinking(model: str) -> bool:
+    # for Anthropic thinking feature, only supported in certain model families
     for family in ("claude-opus-4-", "claude-sonnet-4-"):
         if model.startswith(family):
             rest = model[len(family):]
@@ -174,11 +176,14 @@ class AnthropicClient(LLMClient):
         # ContentReplacementState 保证断点之后的 tool_result 内容保持稳定。
         _mark_last_user_tail_for_cache(messages)
 
+        # 新建一个 kwargs 字典，避免修改调用方传入的 messages 列表。
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.max_output_tokens,
             "messages": messages,
         }
+        # 想要在 Anthropic 上使用 thinking 功能，必须在请求中显式传入
+        # thinking={"type": "enabled", "budget_tokens": ...}，否则即便
         if system:
             kwargs["system"] = [{
                 "type": "text",
@@ -188,9 +193,10 @@ class AnthropicClient(LLMClient):
         if tools:
             kwargs["tools"] = _mark_last_tool_for_cache(tools)
 
+        # 选择 thinking 模式：如果模型支持 adaptive thinking，则 budget_tokens=0，
         if self.thinking:
             if _supports_adaptive_thinking(self.model):
-                kwargs["thinking"] = {"type": "enabled", "budget_tokens": 0}
+                kwargs["thinking"] = {"type": "enabled", "budget_tokens": 0} # budget_tokens=0 表示 adaptive thinking，模型会根据上下文自动分配预算
             else:
                 kwargs["thinking"] = {
                     "type": "enabled",
@@ -204,7 +210,9 @@ class AnthropicClient(LLMClient):
         thinking_accum = ""
         thinking_signature = ""
 
+        # SSE事件循环
         try:
+            # async with确保在流结束后正确关闭连接，避免资源泄漏。
             async with self._client.messages.stream(**kwargs) as stream:
                 async for event in stream:
                     if event.type == "content_block_start":
@@ -234,13 +242,13 @@ class AnthropicClient(LLMClient):
                             json_accum += delta.partial_json
                             yield ToolCallDelta(text=delta.partial_json)
                     elif event.type == "content_block_stop":
-                        if in_thinking:
+                        if in_thinking: # 如果是 thinking block 结束，则生成 ThinkingComplete 事件
                             yield ThinkingComplete(
                                 thinking=thinking_accum,
                                 signature=thinking_signature,
                             )
                             in_thinking = False
-                        if current_tool_name:
+                        if current_tool_name: # 如果是 tool_use block 结束，则生成 ToolCallComplete 事件
                             try:
                                 args = json.loads(json_accum) if json_accum else {}
                             except json.JSONDecodeError:

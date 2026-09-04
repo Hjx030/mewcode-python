@@ -2,23 +2,23 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from mewcode.tools.base import Tool
+from mewcode.tools.base import Tool # Tool类在base里定义，包含名字、描述、Schema参数
 
 if TYPE_CHECKING:
     from mewcode.cache import FileCache
 
-
+# 注册本身很简单，往字典里存
 class ToolRegistry:
     def __init__(self) -> None:
-        self._tools: dict[str, Tool] = {}
-        self._disabled: set[str] = set()
-        self._discovered: set[str] = set()
+        self._tools: dict[str, Tool] = {} # 存储已注册的工具，键为工具名称，值为工具实例
+        self._disabled: set[str] = set() # 存储被禁用的工具名称
+        self._discovered: set[str] = set() # 存储已被发现的工具名称
 
     def register(self, tool: Tool) -> None:
-        self._tools[tool.name] = tool
+        self._tools[tool.name] = tool # 注册工具，将工具实例存入字典
 
     def get(self, name: str) -> Tool | None:
-        return self._tools.get(name)
+        return self._tools.get(name) # 根据工具名称获取工具实例，如果不存在返回 None
 
 
     def is_enabled(self, name: str) -> bool:
@@ -30,7 +30,7 @@ class ToolRegistry:
 
     def disable(self, name: str) -> None:
         if name in self._tools:
-            self._disabled.add(name)
+            self._disabled.add(name) # 将工具名称添加到禁用集合中
 
     def enable_all(self) -> None:
         self._disabled.clear()
@@ -120,12 +120,12 @@ class ToolRegistry:
     def get_all_schemas(self, protocol: str = "anthropic") -> list[dict[str, Any]]:
         schemas: list[dict[str, Any]] = []
         for name, tool in self._tools.items():
-            if name in self._disabled:
+            if name in self._disabled: # 如果工具被禁用，跳过
                 continue
-            if getattr(tool, "should_defer", False) and name not in self._discovered:
+            if getattr(tool, "should_defer", False) and name not in self._discovered: # 如果工具应该延迟且未被发现，跳过
                 continue
-            base = tool.get_schema()
-            if protocol in ("openai", "openai-compat"):
+            base = tool.get_schema() # 获取工具的基础 Schema
+            if protocol in ("openai", "openai-compat"): # 如果使用 OpenAI 协议，转换为函数调用格式
                 schemas.append({
                     "type": "function",
                     "name": base["name"],
@@ -133,7 +133,7 @@ class ToolRegistry:
                     "parameters": base["input_schema"],
                 })
             else:
-                schemas.append(base)
+                schemas.append(base) # 否则直接使用基础 Schema
         return schemas
 
 
